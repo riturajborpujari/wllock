@@ -1,0 +1,23 @@
+* {
+    font-size: 22pt;
+}
+
+.message {
+    color: #ff4040;
+    font-size: 20pt;
+}
+
+entry, entry:active, entry:focus, entry:hover {
+    color: orange;
+    box-shadow: 0 0 5px 1px #606060;
+    outline: none;
+    font-family: "Noto Sans";
+    font-weight: 300;
+    border-radius: 4px;
+}
+
+box {
+    padding: 64px;
+    background-color: #202020dd;
+    border-radius: 4px;
+}
