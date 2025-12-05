@@ -10,6 +10,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define MICRO_SECONDS_IN_A_MIN 60000000
+
 typedef struct {
 	GtkApplication		   *app;
 	GtkWindow			   *lock_window;
@@ -19,6 +21,17 @@ typedef struct {
 GtkWidget *password_entry;
 GtkWidget *message_label;
 GtkWidget *clock_label;
+
+static void on_duration_property_set(GObject* obj, GParamSpec* pspec, gpointer user_data)
+{
+	gint64 duration = gtk_media_stream_get_duration(GTK_MEDIA_STREAM(obj));
+	gint64 durationMins = duration / MICRO_SECONDS_IN_A_MIN;
+	gint64 timestampMins = (random() % (durationMins - 1));
+
+	printf("INFO: Video duration: %ld mins\n", durationMins);
+	printf("INFO: Seeking to    : %ld mins\n", timestampMins);
+	gtk_media_stream_seek(GTK_MEDIA_STREAM(obj), timestampMins * MICRO_SECONDS_IN_A_MIN);
+}
 
 static gboolean update_clock(gpointer user_data)
 {
@@ -131,13 +144,9 @@ static void activate(GtkApplication *app, gpointer user_data)
     GtkMediaStream *media = gtk_media_file_new_for_filename(media_filepath);
     GtkWidget *bg_image = gtk_picture_new_for_paintable(GDK_PAINTABLE(media));
 
+	g_signal_connect(media, "notify::duration",
+			G_CALLBACK(on_duration_property_set), NULL);
     gtk_media_stream_set_loop(GTK_MEDIA_STREAM(media), true);
-	gtk_media_stream_stream_prepared (media, false, true, true, 0);
-
-	// timestamp should be provided in useconds
-	gint64 timestamp = (random() % (data->videoDurationMins - 1)) * 60 * 1000000;
-	gtk_media_stream_seek(GTK_MEDIA_STREAM(media), timestamp);
-
 	gtk_media_stream_play(GTK_MEDIA_STREAM(media));
     gtk_overlay_set_child(GTK_OVERLAY(overlay), bg_image);
 
@@ -200,18 +209,20 @@ static void activate(GtkApplication *app, gpointer user_data)
     }
     gtk_session_lock_instance_assign_window_to_monitor(
         data->lock, data->lock_window, monitor);
+
+	printf("%zd: Presenting window to screen\n", time(NULL));
     gtk_window_present(GTK_WINDOW(data->lock_window));
 }
 
 int main(int argc, char *argv[])
 {
-	gint64 videoDurationMins = 0;
-	if (argc > 1) {
-		sscanf(argv[1], "%zd", &videoDurationMins);
-		printf("INFO: Received duration: %zd mins\n", videoDurationMins);
-	}
+	//gint64 videoDurationMins = 0;
+	//if (argc > 1) {
+	//	sscanf(argv[1], "%zd", &videoDurationMins);
+	//	printf("INFO: Received duration: %zd mins\n", videoDurationMins);
+	//}
     AppData data = {0};
-	data.videoDurationMins = videoDurationMins;
+	//data.videoDurationMins = videoDurationMins;
 
 	srandom(time(NULL));
     GtkApplication *app = gtk_application_new("org.roodrax.wllock", G_APPLICATION_DEFAULT_FLAGS);
@@ -219,7 +230,7 @@ int main(int argc, char *argv[])
 	// app.g_signal_connect("activate"...
 
 	// FIXME: Hack: don't let GTK know of our cmd line parameter
-    int status = g_application_run(G_APPLICATION(app), 1, argv);
+    int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
 
     return status;
