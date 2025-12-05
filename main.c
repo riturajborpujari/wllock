@@ -7,18 +7,21 @@
 #include <security/pam_appl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct {
-    GtkApplication         *app;
-    GtkWindow              *lock_window;
-    GtkSessionLockInstance *lock;
+	GtkApplication		   *app;
+	GtkWindow			   *lock_window;
+	GtkSessionLockInstance *lock;
+	gint64					videoDurationMins;
 } AppData;
 GtkWidget *password_entry;
 GtkWidget *message_label;
 GtkWidget *clock_label;
 
-static gboolean update_clock(gpointer user_data) {
+static gboolean update_clock(gpointer user_data)
+{
     GtkLabel  *label    = GTK_LABEL(user_data);
     time_t     rawtime  = time(NULL);
     struct tm *timeinfo = localtime(&rawtime);
@@ -31,7 +34,8 @@ static gboolean update_clock(gpointer user_data) {
 }
 
 static int pam_converstaion(int num_msg, const struct pam_message **msg,
-                            struct pam_response **resp, void *appdata_ptr) {
+                            struct pam_response **resp, void *appdata_ptr)
+{
     const char          *password = (const char *)appdata_ptr;
     struct pam_response *replies = calloc(num_msg, sizeof(struct pam_response));
 
@@ -51,7 +55,8 @@ static int pam_converstaion(int num_msg, const struct pam_message **msg,
     return PAM_SUCCESS;
 }
 
-static gboolean verify_password(const char *password) {
+static gboolean verify_password(const char *password)
+{
     struct pam_conv conv = {
         pam_converstaion,
         (void *)password,
@@ -69,7 +74,8 @@ static gboolean verify_password(const char *password) {
     return status == PAM_SUCCESS;
 }
 
-static void on_password_entered(GtkWidget *widget, gpointer user_data) {
+static void on_password_entered(GtkWidget *widget, gpointer user_data)
+{
     AppData *data = (AppData *)user_data;
     // FIXME: the following label text set doesn't work
     gtk_label_set_text(GTK_LABEL(message_label), "Verifying...");
@@ -92,7 +98,8 @@ static void on_password_entered(GtkWidget *widget, gpointer user_data) {
     }
 }
 
-static void activate(GtkApplication *app, gpointer user_data) {
+static void activate(GtkApplication *app, gpointer user_data)
+{
     AppData *data = (AppData *)user_data;
     if (!data->lock_window) {
         data->lock_window = GTK_WINDOW(gtk_application_window_new(app));
@@ -123,8 +130,15 @@ static void activate(GtkApplication *app, gpointer user_data) {
 	}
     GtkMediaStream *media = gtk_media_file_new_for_filename(media_filepath);
     GtkWidget *bg_image = gtk_picture_new_for_paintable(GDK_PAINTABLE(media));
-    gtk_media_stream_play(GTK_MEDIA_STREAM(media));
+
     gtk_media_stream_set_loop(GTK_MEDIA_STREAM(media), true);
+	gtk_media_stream_stream_prepared (media, false, true, true, 0);
+
+	// timestamp should be provided in useconds
+	gint64 timestamp = (random() % (data->videoDurationMins - 1)) * 60 * 1000000;
+	gtk_media_stream_seek(GTK_MEDIA_STREAM(media), timestamp);
+
+	gtk_media_stream_play(GTK_MEDIA_STREAM(media));
     gtk_overlay_set_child(GTK_OVERLAY(overlay), bg_image);
 
     GtkWidget *container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
@@ -189,14 +203,23 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_window_present(GTK_WINDOW(data->lock_window));
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
+	gint64 videoDurationMins = 0;
+	if (argc > 1) {
+		sscanf(argv[1], "%zd", &videoDurationMins);
+		printf("INFO: Received duration: %zd mins\n", videoDurationMins);
+	}
     AppData data = {0};
+	data.videoDurationMins = videoDurationMins;
 
-    GtkApplication *app = gtk_application_new(
-        "org.roodrax.wllock", G_APPLICATION_DEFAULT_FLAGS);
+	srandom(time(NULL));
+    GtkApplication *app = gtk_application_new("org.roodrax.wllock", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(app, "activate", G_CALLBACK(activate), &data);
+	// app.g_signal_connect("activate"...
 
-    int status = g_application_run(G_APPLICATION(app), argc, argv);
+	// FIXME: Hack: don't let GTK know of our cmd line parameter
+    int status = g_application_run(G_APPLICATION(app), 1, argv);
     g_object_unref(app);
 
     return status;
